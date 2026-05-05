@@ -1,0 +1,38 @@
+# /etc/powerdns/pdns.conf
+# Deploy this on EACH of the 4 nodes.
+# The "kind" of zone (Master vs Slave) is set per-zone by the portal,
+# so this config is the same on all nodes.
+
+# ── Listener ──────────────────────────────────────────────────────────
+local-address=0.0.0.0
+local-ipv6=::
+local-port=53
+
+# ── Backend (SQLite is fine for NS-only use, MySQL for multi-process) ─
+launch=gsqlite3
+gsqlite3-database=/var/lib/powerdns/pdns.db
+
+# ── API (used by the portal — bind to loopback or internal IP only) ──
+api=yes
+api-key=CHANGEME_STRONG_RANDOM_KEY
+
+webserver=yes
+webserver-address=127.0.0.1        # Change to internal IP if portal is remote
+webserver-port=8081
+webserver-allow-from=127.0.0.1,::1,10.0.0.0/8
+
+# ── Zone transfers ────────────────────────────────────────────────────
+# On nodes acting as Master for a zone, PowerDNS will NOTIFY the slave
+# IPs listed in the zone's "also-notify" (set via API by the portal).
+# On Slave nodes, AXFR is triggered by NOTIFY or manually via API.
+
+# Allow AXFR from any node in the cluster (tighten if needed)
+allow-axfr-ips=10.0.0.0/8,YOUR_FRA_IP,YOUR_DUS_IP,YOUR_AMS_IP,YOUR_WAW_IP
+
+# ── Misc ──────────────────────────────────────────────────────────────
+daemon=no                           # systemd manages the process
+guardian=no
+setuid=pdns
+setgid=pdns
+log-dns-queries=no
+loglevel=4
