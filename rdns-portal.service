@@ -1,0 +1,22 @@
+[Unit]
+Description=V6Direct rDNS Portal v2
+After=network.target
+
+[Service]
+Type=simple
+User=rdns
+WorkingDirectory=/opt/rdns-portal
+EnvironmentFile=/opt/rdns-portal/.env
+ExecStart=/opt/rdns-portal/venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --workers 2 \
+    --proxy-headers \
+    --forwarded-allow-ips='*'
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

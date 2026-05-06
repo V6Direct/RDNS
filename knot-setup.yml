@@ -1,0 +1,92 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Knot DNS + RESTKnot setup — deploy on each of the 4 PoP nodes
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Architecture:
+#   - RESTKnot agent runs on each node and talks to Knot via knotc socket
+#   - RESTKnot API runs on each node and exposes an HTTP API (default :5000)
+#   - Our portal talks to each node's RESTKnot API (configured per node in DB)
+#   - Zone replication (primary → secondary) is handled by Knot natively
+#     via NOTIFY + AXFR — configured in knot.conf below
+#
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── 1. Install packages ────────────────────────────────────────────────────
+# apt install knot
+# pip install restknot-agent restknot-api   (or use Docker — see RESTKnot docs)
+
+# ── 2. /etc/knot/knot.conf ────────────────────────────────────────────────
+# Deploy this on ALL 4 nodes. Zone role (master/slave) is per-zone, set when
+# RESTKnot creates the zone. The remotes block lists ALL peer nodes so any
+# node can act as master or slave depending on the customer's NS selection.
+
+server:
+  rundir: "/run/knot"
+  user: knot:knot
+  listen:
+    - "0.0.0.0@53"
+    - "::@53"
+
+log:
+  - target: syslog
+    any: info
+
+database:
+  storage: "/var/lib/knot"
+
+# ── Peer nodes (add actual IPs) ────────────────────────────────────────────
+remote:
+  - id: ams
+    address: AMS_IP@53          # Amsterdam
+  - id: fra
+    address: FRA_IP@53          # Frankfurt
+  - id: dus
+    address: DUS_IP@53          # Düsseldorf
+  - id: waw
+    address: WAW_IP@53          # Warsaw
+
+# ── ACL: allow AXFR/NOTIFY from all peers ─────────────────────────────────
+acl:
+  - id: peers
+    address: [AMS_IP, FRA_IP, DUS_IP, WAW_IP]
+    action: [transfer, notify]
+
+# ── Default template: zones inherit these settings ────────────────────────
+template:
+  - id: default
+    storage: "/var/lib/knot/zones"
+    file: "%s.zone"
+    acl: [peers]
+    # For slave zones the master is set per-zone by RESTKnot:
+    # master: [ams]   ← example, set by RESTKnot when creating slave zone
+
+# ── RESTKnot agent config (/etc/restknot/agent.yml) ───────────────────────
+# server:
+#   host: 127.0.0.1
+#   port: 5555
+# knot:
+#   socket: /run/knot/knot.sock
+
+# ── RESTKnot API config (/etc/restknot/api.yml) ────────────────────────────
+# server:
+#   host: 0.0.0.0     # bind to internal IP in prod, not 0.0.0.0
+#   port: 5000
+# api_key: CHANGEME_STRONG_RANDOM_KEY
+# agent:
+#   host: 127.0.0.1
+#   port: 5555
+
+# ── Firewall rules on each node ────────────────────────────────────────────
+# ufw allow 53/tcp
+# ufw allow 53/udp
+# ufw allow from <PORTAL_IP> to any port 5000 proto tcp   # RESTKnot API
+# ufw allow from AMS_IP to any port 53 proto tcp           # AXFR
+# ufw allow from FRA_IP to any port 53 proto tcp
+# ufw allow from DUS_IP to any port 53 proto tcp
+# ufw allow from WAW_IP to any port 53 proto tcp
+# ufw deny 5000   # block RESTKnot API from public internet
+
+# ── Portal node config (in seed.py / Admin panel) ──────────────────────────
+# pdns_api_url = http://<node-internal-ip>:5000   (RESTKnot API base URL)
+# pdns_api_key = <api_key from api.yml above>
+# pdns_server_id field is unused for Knot — leave as "localhost"
